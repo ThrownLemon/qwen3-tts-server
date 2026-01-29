@@ -29,18 +29,39 @@ Based on [groxaxo/Qwen3-TTS-Openai-Fastapi](https://github.com/groxaxo/Qwen3-TTS
 conda create -n qwen3-tts python=3.12 -y
 conda activate qwen3-tts
 
-# 2. Install dependencies
-pip install -r requirements.txt
-pip install -U flash-attn --no-build-isolation
+# 2. Install PyTorch with CUDA
+pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu130
 
-# 3. (Optional) Install voice sample prep tools
+# 3. Install the project
+pip install -e ".[api]"
+
+# 4. Install ffmpeg and sox (for audio format conversion)
+conda install -y -c conda-forge ffmpeg sox
+
+# 5. (Optional) Install Flash Attention 2 for faster inference
+# On Windows, use prebuilt wheels from https://huggingface.co/ussoewwin/Flash-Attention-2_for_Windows
+# On Linux: pip install flash-attn --no-build-isolation
+
+# 6. Download models to local directory (avoids symlink issues on Windows)
+python -c "from huggingface_hub import snapshot_download; snapshot_download('Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice', local_dir='models/CustomVoice')"
+python -c "from huggingface_hub import snapshot_download; snapshot_download('Qwen/Qwen3-TTS-12Hz-1.7B-Base', local_dir='models/Base')"
+python -c "from huggingface_hub import snapshot_download; snapshot_download('Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign', local_dir='models/VoiceDesign')"
+
+# 7. (Optional) Install voice sample prep tools
 pip install demucs openai-whisper
+```
 
-# 4. Start the server
+### Starting the Server
+
+**Windows:** Double-click `start.bat` (or `stop.bat` to stop).
+
+**Manual:**
+```bash
+conda activate qwen3-tts
 python -m api.main
 ```
 
-The server starts on `http://0.0.0.0:8880`. Models download automatically on first use from HuggingFace.
+The server starts on `http://0.0.0.0:8880`.
 
 ## Usage
 

@@ -51,8 +51,8 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/Qwen/Qwen3-TTS"
-Repository = "https://github.com/Qwen/Qwen3-TTS"
+Homepage = "https://github.com/ThrownLemon/qwen3-tts-server"
+Repository = "https://github.com/ThrownLemon/qwen3-tts-server"
 
 [project.scripts]
 qwen-tts-demo = "qwen_tts.cli.demo:main"
