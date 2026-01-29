@@ -5,7 +5,10 @@ OpenAI-compatible router for text-to-speech API.
 Implements endpoints compatible with OpenAI's TTS API specification.
 """
 
+import base64
 import logging
+import os
+import tempfile
 import time
 from typing import List, Optional
 
@@ -369,13 +372,30 @@ async def create_voice_clone(request: VoiceCloneRequest):
                 detail={"error": "invalid_input", "message": "Input text is empty after normalization", "type": "invalid_request_error"},
             )
 
-        audio, sample_rate = await backend.generate_voice_clone(
-            text=normalized_text,
-            ref_audio=request.ref_audio,
-            ref_text=request.ref_text,
-            x_vector_only_mode=request.x_vector_only_mode,
-            speed=request.speed,
-        )
+        # Decode base64 ref_audio to a temp file if it's not already a file path
+        ref_audio_path = request.ref_audio
+        temp_file = None
+        if not os.path.exists(ref_audio_path):
+            try:
+                audio_data = base64.b64decode(ref_audio_path)
+                temp_file = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+                temp_file.write(audio_data)
+                temp_file.close()
+                ref_audio_path = temp_file.name
+            except Exception:
+                pass  # Not base64, let the backend handle it
+
+        try:
+            audio, sample_rate = await backend.generate_voice_clone(
+                text=normalized_text,
+                ref_audio=ref_audio_path,
+                ref_text=request.ref_text,
+                x_vector_only_mode=request.x_vector_only_mode,
+                speed=request.speed,
+            )
+        finally:
+            if temp_file and os.path.exists(temp_file.name):
+                os.unlink(temp_file.name)
 
         audio_bytes = encode_audio(audio, request.response_format, sample_rate)
         content_type = get_content_type(request.response_format)

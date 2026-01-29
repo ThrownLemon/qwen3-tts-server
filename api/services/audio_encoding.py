@@ -7,12 +7,20 @@ Handles conversion of raw audio to various formats (mp3, opus, aac, flac, wav, p
 
 import io
 import logging
+import os
 import struct
+import sys
 from typing import Literal, Optional
 
 import numpy as np
 
 logger = logging.getLogger(__name__)
+
+# Ensure conda env's ffmpeg is on PATH (pydub needs it)
+for _subdir in ["Scripts", os.path.join("Library", "bin")]:
+    _bin_dir = os.path.join(sys.prefix, _subdir)
+    if os.path.isdir(_bin_dir) and _bin_dir not in os.environ.get("PATH", ""):
+        os.environ["PATH"] = _bin_dir + os.pathsep + os.environ.get("PATH", "")
 
 AudioFormat = Literal["mp3", "opus", "aac", "flac", "wav", "pcm"]
 
@@ -149,6 +157,12 @@ def encode_audio(
     # For compressed formats, use pydub if available, otherwise fall back to wav
     try:
         from pydub import AudioSegment
+
+        # Point pydub at conda env's ffmpeg if not already found
+        if AudioSegment.converter is None or not os.path.isfile(AudioSegment.converter):
+            _ffmpeg = os.path.join(sys.prefix, "Scripts", "ffmpeg.exe")
+            if os.path.isfile(_ffmpeg):
+                AudioSegment.converter = _ffmpeg
         
         # Convert to WAV first
         wav_bytes = convert_to_wav(audio, sample_rate)
