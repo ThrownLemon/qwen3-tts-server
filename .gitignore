@@ -25,6 +25,7 @@ env/
 .env
 
 # Audio samples and model cache
+models/
 samples/
 *.wav
 *.mp3

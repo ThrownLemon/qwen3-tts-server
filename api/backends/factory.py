@@ -6,11 +6,16 @@ Factory for creating TTS backend instances.
 
 import os
 import logging
+from pathlib import Path
 from typing import Optional
 
 from .base import TTSBackend
 from .official_qwen3_tts import OfficialQwen3TTSBackend
 from .vllm_omni_qwen3_tts import VLLMOmniQwen3TTSBackend
+
+# Resolve local model directory relative to project root
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+_LOCAL_MODELS_DIR = _PROJECT_ROOT / "models"
 
 logger = logging.getLogger(__name__)
 
@@ -47,8 +52,13 @@ def get_backend() -> TTSBackend:
         if model_name:
             _backend_instance = OfficialQwen3TTSBackend(model_name=model_name)
         else:
-            # Use default CustomVoice model
-            _backend_instance = OfficialQwen3TTSBackend()
+            # Prefer local model directory if it exists (avoids Windows symlink issues)
+            local_cv = _LOCAL_MODELS_DIR / "CustomVoice"
+            if local_cv.exists() and (local_cv / "config.json").exists():
+                _backend_instance = OfficialQwen3TTSBackend(model_name=str(local_cv))
+                logger.info(f"Using local model: {local_cv}")
+            else:
+                _backend_instance = OfficialQwen3TTSBackend()
         
         logger.info(f"Using official Qwen3-TTS backend with model: {_backend_instance.get_model_id()}")
     

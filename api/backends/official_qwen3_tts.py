@@ -8,10 +8,14 @@ from the qwen_tts package.
 """
 
 import logging
+from pathlib import Path
 from typing import Optional, Tuple, List, Dict, Any
 import numpy as np
 
 from .base import TTSBackend
+
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+_LOCAL_MODELS_DIR = _PROJECT_ROOT / "models"
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +30,10 @@ except ImportError:
 class OfficialQwen3TTSBackend(TTSBackend):
     """Official Qwen3-TTS backend using the qwen_tts package."""
 
-    def __init__(self, model_name: str = "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice"):
+    # Default to local model path if it exists, otherwise use HuggingFace ID
+    _DEFAULT_MODEL = "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice"
+
+    def __init__(self, model_name: str = _DEFAULT_MODEL):
         """
         Initialize the official backend.
 
@@ -196,10 +203,14 @@ class OfficialQwen3TTSBackend(TTSBackend):
             device = self.device or ("cuda:0" if torch.cuda.is_available() else "cpu")
             dtype = self.dtype or (torch.bfloat16 if torch.cuda.is_available() else torch.float32)
 
+            # Prefer local model if available
+            local_base = _LOCAL_MODELS_DIR / "Base"
+            model_id = str(local_base) if (local_base / "config.json").exists() else "Qwen/Qwen3-TTS-12Hz-1.7B-Base"
+
             for attn_impl in ["flash_attention_2", "sdpa", "eager"]:
                 try:
                     self._clone_model = Qwen3TTSModel.from_pretrained(
-                        "Qwen/Qwen3-TTS-12Hz-1.7B-Base",
+                        model_id,
                         device_map=device,
                         dtype=dtype,
                         attn_implementation=attn_impl,
@@ -226,10 +237,14 @@ class OfficialQwen3TTSBackend(TTSBackend):
             device = self.device or ("cuda:0" if torch.cuda.is_available() else "cpu")
             dtype = self.dtype or (torch.bfloat16 if torch.cuda.is_available() else torch.float32)
 
+            # Prefer local model if available
+            local_vd = _LOCAL_MODELS_DIR / "VoiceDesign"
+            model_id = str(local_vd) if (local_vd / "config.json").exists() else "Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign"
+
             for attn_impl in ["flash_attention_2", "sdpa", "eager"]:
                 try:
                     self._design_model = Qwen3TTSModel.from_pretrained(
-                        "Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign",
+                        model_id,
                         device_map=device,
                         dtype=dtype,
                         attn_implementation=attn_impl,
