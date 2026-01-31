@@ -97,10 +97,10 @@ for lang_code in LANGUAGE_CODE_MAPPING.keys():
 VOICE_MAPPING = {
     "alloy": "Vivian",
     "echo": "Ryan",
-    "fable": "Sophia",
-    "nova": "Isabella",
-    "onyx": "Evan",
-    "shimmer": "Lily",
+    "fable": "Serena",
+    "nova": "Sohee",
+    "onyx": "Eric",
+    "shimmer": "Ono_anna",
 }
 
 
@@ -210,9 +210,19 @@ async def create_speech(
         )
     
     try:
+        start_time = time.time()
+
+        logger.debug(
+            "[TTS Request] model=%s voice=%s format=%s speed=%.2f language=%s stream=%s instruct=%s input_length=%d",
+            request.model, request.voice, request.response_format,
+            request.speed, request.language, request.stream,
+            request.instruct, len(request.input),
+        )
+        logger.debug("[TTS Request] input_text=%.200s", request.input)
+
         # Normalize input text
         normalized_text = normalize_text(request.input, request.normalization_options)
-        
+
         if not normalized_text.strip():
             raise HTTPException(
                 status_code=400,
@@ -222,12 +232,33 @@ async def create_speech(
                     "type": "invalid_request_error",
                 },
             )
-        
+
+        logger.debug("[TTS Normalize] normalized_length=%d text=%.200s", len(normalized_text), normalized_text)
+
+        # Validate voice
+        voice_name = get_voice_name(request.voice)
+        backend = await get_tts_backend()
+        supported_voices = backend.get_supported_voices()
+        supported_lower = {v.lower(): v for v in supported_voices}
+        if voice_name.lower() not in supported_lower:
+            openai_aliases = list(VOICE_MAPPING.keys())
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "invalid_voice",
+                    "message": f"Unsupported voice: '{request.voice}'. Supported voices: {sorted(supported_voices)} or OpenAI aliases: {openai_aliases}",
+                    "type": "invalid_request_error",
+                },
+            )
+
+        logger.debug("[TTS Voice] requested=%s mapped=%s", request.voice, voice_name)
+
         # Extract language from model name if present, otherwise use request language
         model_language = extract_language_from_model(request.model)
         language = model_language if model_language else (request.language or "Auto")
-        
+
         # Generate speech
+        gen_start = time.time()
         audio, sample_rate = await generate_speech(
             text=normalized_text,
             voice=request.voice,
@@ -235,13 +266,34 @@ async def create_speech(
             instruct=request.instruct,
             speed=request.speed,
         )
-        
+        gen_elapsed = time.time() - gen_start
+
+        audio_duration = len(audio) / sample_rate
+        logger.debug(
+            "[TTS Generate] elapsed=%.3fs sample_rate=%d samples=%d audio_duration=%.2fs rtf=%.2f",
+            gen_elapsed, sample_rate, len(audio), audio_duration,
+            gen_elapsed / audio_duration if audio_duration > 0 else 0,
+        )
+
         # Encode audio to requested format
+        encode_start = time.time()
         audio_bytes = encode_audio(audio, request.response_format, sample_rate)
-        
+        encode_elapsed = time.time() - encode_start
+
+        logger.debug(
+            "[TTS Encode] format=%s elapsed=%.3fs output_size=%d bytes",
+            request.response_format, encode_elapsed, len(audio_bytes),
+        )
+
         # Get content type
         content_type = get_content_type(request.response_format)
-        
+
+        total_elapsed = time.time() - start_time
+        logger.debug(
+            "[TTS Done] total=%.3fs (generate=%.3fs encode=%.3fs) audio=%.2fs size=%d bytes",
+            total_elapsed, gen_elapsed, encode_elapsed, audio_duration, len(audio_bytes),
+        )
+
         # Return audio response
         return Response(
             content=audio_bytes,
@@ -309,10 +361,10 @@ async def list_voices():
     openai_voices = [
         VoiceInfo(id="alloy", name="Alloy", description="OpenAI-compatible voice (maps to Vivian)"),
         VoiceInfo(id="echo", name="Echo", description="OpenAI-compatible voice (maps to Ryan)"),
-        VoiceInfo(id="fable", name="Fable", description="OpenAI-compatible voice (maps to Sophia)"),
-        VoiceInfo(id="nova", name="Nova", description="OpenAI-compatible voice (maps to Isabella)"),
-        VoiceInfo(id="onyx", name="Onyx", description="OpenAI-compatible voice (maps to Evan)"),
-        VoiceInfo(id="shimmer", name="Shimmer", description="OpenAI-compatible voice (maps to Lily)"),
+        VoiceInfo(id="fable", name="Fable", description="OpenAI-compatible voice (maps to Serena)"),
+        VoiceInfo(id="nova", name="Nova", description="OpenAI-compatible voice (maps to Sohee)"),
+        VoiceInfo(id="onyx", name="Onyx", description="OpenAI-compatible voice (maps to Eric)"),
+        VoiceInfo(id="shimmer", name="Shimmer", description="OpenAI-compatible voice (maps to Ono_anna)"),
     ]
     
     default_languages = ["English", "Chinese", "Japanese", "Korean", "German", "French", "Spanish", "Russian", "Portuguese", "Italian"]
@@ -363,6 +415,12 @@ async def create_voice_clone(request: VoiceCloneRequest):
     Optionally include the transcript of the reference audio for better quality.
     """
     try:
+        start_time = time.time()
+        logger.debug(
+            "[Clone Request] format=%s speed=%.2f x_vector_only=%s ref_text=%s input_length=%d",
+            request.response_format, request.speed, request.x_vector_only_mode,
+            request.ref_text is not None, len(request.input),
+        )
         backend = await get_tts_backend()
 
         normalized_text = normalize_text(request.input, request.normalization_options)
@@ -400,6 +458,8 @@ async def create_voice_clone(request: VoiceCloneRequest):
         audio_bytes = encode_audio(audio, request.response_format, sample_rate)
         content_type = get_content_type(request.response_format)
 
+        logger.debug("[Clone Done] total=%.3fs size=%d bytes", time.time() - start_time, len(audio_bytes))
+
         return Response(
             content=audio_bytes,
             media_type=content_type,
@@ -426,6 +486,11 @@ async def create_voice_design(request: VoiceDesignRequest):
     and provide the text to speak.
     """
     try:
+        start_time = time.time()
+        logger.debug(
+            "[Design Request] format=%s speed=%.2f description=%.100s input_length=%d",
+            request.response_format, request.speed, request.voice_description, len(request.input),
+        )
         backend = await get_tts_backend()
 
         normalized_text = normalize_text(request.input, request.normalization_options)
@@ -443,6 +508,8 @@ async def create_voice_design(request: VoiceDesignRequest):
 
         audio_bytes = encode_audio(audio, request.response_format, sample_rate)
         content_type = get_content_type(request.response_format)
+
+        logger.debug("[Design Done] total=%.3fs size=%d bytes", time.time() - start_time, len(audio_bytes))
 
         return Response(
             content=audio_bytes,

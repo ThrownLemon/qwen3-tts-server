@@ -90,7 +90,7 @@ class VoiceCloneRequest(BaseModel):
 
     input: str = Field(
         ...,
-        description="The text to generate audio for.",
+        description="The text to generate audio for. Maximum length is 4096 characters.",
         max_length=4096,
     )
     ref_audio: str = Field(
@@ -126,7 +126,7 @@ class VoiceDesignRequest(BaseModel):
 
     input: str = Field(
         ...,
-        description="The text to generate audio for.",
+        description="The text to generate audio for. Maximum length is 4096 characters.",
         max_length=4096,
     )
     voice_description: str = Field(

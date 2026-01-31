@@ -18,7 +18,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, FileResponse
 
-# Configure logging
+# Configure logging (level set after env var parsing below)
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -33,6 +33,12 @@ WORKERS = int(os.getenv("WORKERS", "1"))
 # Backend configuration
 TTS_BACKEND = os.getenv("TTS_BACKEND", "official")
 TTS_WARMUP_ON_START = os.getenv("TTS_WARMUP_ON_START", "false").lower() == "true"
+TTS_DEBUG = os.getenv("TTS_DEBUG", "false").lower() == "true"
+
+# Enable debug logging for the api package when TTS_DEBUG is set
+if TTS_DEBUG:
+    logging.getLogger("api").setLevel(logging.DEBUG)
+    logger.info("Debug mode enabled (TTS_DEBUG=true)")
 
 # CORS configuration
 CORS_ORIGINS = os.getenv("CORS_ORIGINS", "*").split(",")

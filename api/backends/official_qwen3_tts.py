@@ -7,6 +7,7 @@ This backend uses the official Qwen3-TTS Python implementation
 from the qwen_tts package.
 """
 
+import json
 import logging
 from pathlib import Path
 from typing import Optional, Tuple, List, Dict, Any
@@ -25,6 +26,45 @@ try:
     LIBROSA_AVAILABLE = True
 except ImportError:
     LIBROSA_AVAILABLE = False
+
+
+def _load_cloned_voices(samples_dir: Path) -> Dict[str, Dict[str, str]]:
+    """Scan samples/ for cloned voice directories containing manifest.json.
+
+    Returns a dict mapping lowercase voice name to {"ref_audio": path, "ref_text": transcript}.
+    Picks the clip with the longest duration that has a non-empty transcript.
+    """
+    voices: Dict[str, Dict[str, str]] = {}
+    if not samples_dir.is_dir():
+        return voices
+
+    for voice_dir in samples_dir.iterdir():
+        manifest_path = voice_dir / "clips" / "manifest.json"
+        if not manifest_path.exists():
+            continue
+        try:
+            with open(manifest_path, "r", encoding="utf-8") as f:
+                manifest = json.load(f)
+            # Pick best clip: longest duration with a transcript
+            best = None
+            for sample in manifest.get("samples", []):
+                if not sample.get("transcript", "").strip():
+                    continue
+                if best is None or sample["duration_seconds"] > best["duration_seconds"]:
+                    best = sample
+            if best is None:
+                continue
+            clip_path = str(voice_dir / "clips" / best["filename"])
+            voices[voice_dir.name.lower()] = {
+                "ref_audio": clip_path,
+                "ref_text": best["transcript"],
+                "display_name": voice_dir.name.capitalize(),
+            }
+            logger.info(f"Loaded cloned voice '{voice_dir.name}' from {clip_path}")
+        except Exception as e:
+            logger.warning(f"Failed to load cloned voice from {voice_dir}: {e}")
+
+    return voices
 
 
 class OfficialQwen3TTSBackend(TTSBackend):
@@ -47,6 +87,8 @@ class OfficialQwen3TTSBackend(TTSBackend):
         self._design_model = None
         self._clone_ready = False
         self._design_ready = False
+        # Discover cloned voices from samples/ directory
+        self._cloned_voices = _load_cloned_voices(_PROJECT_ROOT / "samples")
     
     async def initialize(self) -> None:
         """Initialize the backend and load the model."""
@@ -167,8 +209,37 @@ class OfficialQwen3TTSBackend(TTSBackend):
         """
         if not self._ready:
             await self.initialize()
-        
+
+        # Check if this is a cloned voice (only if the model doesn't have it as a built-in speaker)
+        voice_key = voice.lower()
+        builtin_speakers = set()
         try:
+            if self.model and hasattr(self.model.model, 'get_supported_speakers'):
+                speakers = self.model.model.get_supported_speakers()
+                if speakers:
+                    builtin_speakers = {s.lower() for s in speakers}
+        except Exception:
+            pass
+
+        if voice_key in self._cloned_voices and voice_key not in builtin_speakers:
+            clone_info = self._cloned_voices[voice_key]
+            logger.debug(
+                "[Backend] generate_speech routed to CLONE: voice=%s ref_audio=%s speed=%.2f text_length=%d",
+                voice, clone_info["ref_audio"], speed, len(text),
+            )
+            return await self.generate_voice_clone(
+                text=text,
+                ref_audio=clone_info["ref_audio"],
+                ref_text=clone_info["ref_text"],
+                speed=speed,
+            )
+
+        try:
+            logger.debug(
+                "[Backend] generate_speech called: voice=%s language=%s speed=%.2f instruct=%s text_length=%d",
+                voice, language, speed, instruct, len(text),
+            )
+
             # Generate speech
             wavs, sr = self.model.generate_custom_voice(
                 text=text,
@@ -176,15 +247,27 @@ class OfficialQwen3TTSBackend(TTSBackend):
                 speaker=voice,
                 instruct=instruct,
             )
-            
+
             audio = wavs[0]
-            
+            logger.debug("[Backend] raw audio: samples=%d sample_rate=%d duration=%.2fs", len(audio), sr, len(audio) / sr)
+
+            # Log VRAM after generation
+            try:
+                import torch
+                if torch.cuda.is_available():
+                    allocated = torch.cuda.memory_allocated() / 1024**3
+                    reserved = torch.cuda.memory_reserved() / 1024**3
+                    logger.debug("[Backend] VRAM: allocated=%.2f GB reserved=%.2f GB", allocated, reserved)
+            except Exception:
+                pass
+
             # Apply speed adjustment if needed
             if speed != 1.0 and LIBROSA_AVAILABLE:
                 audio = librosa.effects.time_stretch(audio.astype(np.float32), rate=speed)
+                logger.debug("[Backend] speed adjusted to %.2fx, new samples=%d", speed, len(audio))
             elif speed != 1.0:
                 logger.warning("Speed adjustment requested but librosa not available")
-            
+
             return audio, sr
             
         except Exception as e:
@@ -322,21 +405,30 @@ class OfficialQwen3TTSBackend(TTSBackend):
         return self.model_name
     
     def get_supported_voices(self) -> List[str]:
-        """Return list of supported voice names."""
+        """Return list of supported voice names, including cloned voices."""
         if not self._ready or not self.model:
-            # Return default voices when model is not loaded
-            return ["Vivian", "Ryan", "Sophia", "Isabella", "Evan", "Lily"]
-        
-        try:
-            if hasattr(self.model.model, 'get_supported_speakers'):
-                speakers = self.model.model.get_supported_speakers()
-                if speakers:
-                    return list(speakers)
-        except Exception as e:
-            logger.warning(f"Could not get speakers from model: {e}")
-        
-        # Fallback to default voices
-        return ["Vivian", "Ryan", "Sophia", "Isabella", "Evan", "Lily"]
+            voices = ["Vivian", "Ryan", "Serena", "Sohee", "Eric", "Ono_anna", "Aiden", "Dylan", "Uncle_fu"]
+        else:
+            try:
+                if hasattr(self.model.model, 'get_supported_speakers'):
+                    speakers = self.model.model.get_supported_speakers()
+                    if speakers:
+                        voices = list(speakers)
+                    else:
+                        voices = ["Vivian", "Ryan", "Serena", "Sohee", "Eric", "Ono_anna", "Aiden", "Dylan", "Uncle_fu"]
+                else:
+                    voices = ["Vivian", "Ryan", "Serena", "Sohee", "Eric", "Ono_anna", "Aiden", "Dylan", "Uncle_fu"]
+            except Exception as e:
+                logger.warning(f"Could not get speakers from model: {e}")
+                voices = ["Vivian", "Ryan", "Serena", "Sohee", "Eric", "Ono_anna", "Aiden", "Dylan", "Uncle_fu"]
+
+        # Add cloned voices
+        for info in self._cloned_voices.values():
+            display = info["display_name"]
+            if display not in voices:
+                voices.append(display)
+
+        return voices
     
     def get_supported_languages(self) -> List[str]:
         """Return list of supported language names."""
