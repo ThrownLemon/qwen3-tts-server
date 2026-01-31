@@ -52,7 +52,7 @@ def get_backend() -> TTSBackend:
         if model_name:
             _backend_instance = OfficialQwen3TTSBackend(model_name=model_name)
         else:
-            # Prefer local model directory if it exists (avoids Windows symlink issues)
+            # Prefer local model directory if it exists
             local_cv = _LOCAL_MODELS_DIR / "CustomVoice"
             if local_cv.exists() and (local_cv / "config.json").exists():
                 _backend_instance = OfficialQwen3TTSBackend(model_name=str(local_cv))

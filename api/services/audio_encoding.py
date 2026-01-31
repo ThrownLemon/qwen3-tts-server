@@ -17,10 +17,9 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 # Ensure conda env's ffmpeg is on PATH (pydub needs it)
-for _subdir in ["Scripts", os.path.join("Library", "bin")]:
-    _bin_dir = os.path.join(sys.prefix, _subdir)
-    if os.path.isdir(_bin_dir) and _bin_dir not in os.environ.get("PATH", ""):
-        os.environ["PATH"] = _bin_dir + os.pathsep + os.environ.get("PATH", "")
+_bin_dir = os.path.join(sys.prefix, "bin")
+if os.path.isdir(_bin_dir) and _bin_dir not in os.environ.get("PATH", ""):
+    os.environ["PATH"] = _bin_dir + os.pathsep + os.environ.get("PATH", "")
 
 AudioFormat = Literal["mp3", "opus", "aac", "flac", "wav", "pcm"]
 
@@ -159,9 +158,10 @@ def encode_audio(
         from pydub import AudioSegment
 
         # Point pydub at conda env's ffmpeg if not already found
+        import shutil
         if AudioSegment.converter is None or not os.path.isfile(AudioSegment.converter):
-            _ffmpeg = os.path.join(sys.prefix, "Scripts", "ffmpeg.exe")
-            if os.path.isfile(_ffmpeg):
+            _ffmpeg = shutil.which("ffmpeg")
+            if _ffmpeg:
                 AudioSegment.converter = _ffmpeg
         
         # Convert to WAV first

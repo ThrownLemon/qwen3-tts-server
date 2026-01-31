@@ -30,7 +30,7 @@ conda create -n qwen3-tts python=3.12 -y
 conda activate qwen3-tts
 
 # 2. Install PyTorch with CUDA
-pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu130
+pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu131
 
 # 3. Install the project
 pip install -e ".[api]"
@@ -39,10 +39,9 @@ pip install -e ".[api]"
 conda install -y -c conda-forge ffmpeg sox
 
 # 5. (Optional) Install Flash Attention 2 for faster inference
-# On Windows, use prebuilt wheels from https://huggingface.co/ussoewwin/Flash-Attention-2_for_Windows
-# On Linux: pip install flash-attn --no-build-isolation
+pip install flash-attn --no-build-isolation
 
-# 6. Download models to local directory (avoids symlink issues on Windows)
+# 6. Download models to local directory
 python -c "from huggingface_hub import snapshot_download; snapshot_download('Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice', local_dir='models/CustomVoice')"
 python -c "from huggingface_hub import snapshot_download; snapshot_download('Qwen/Qwen3-TTS-12Hz-1.7B-Base', local_dir='models/Base')"
 python -c "from huggingface_hub import snapshot_download; snapshot_download('Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign', local_dir='models/VoiceDesign')"
@@ -53,15 +52,22 @@ pip install demucs openai-whisper
 
 ### Starting the Server
 
-**Windows:** Double-click `start.bat` (or `stop.bat` to stop).
+```bash
+./start.sh        # start server
+./stop.sh         # stop server
+```
 
-**Manual:**
+Or manually:
 ```bash
 conda activate qwen3-tts
 python -m api.main
 ```
 
 The server starts on `http://0.0.0.0:8880`.
+
+### WSL2 Notes
+
+If running in WSL2 and accessing from the Windows host, the server is available at `http://localhost:8880` from Windows (WSL2 auto-forwards ports). To access from other LAN machines, use the Windows host IP.
 
 ## Usage
 
@@ -157,8 +163,8 @@ Use `--skip-transcription` to skip Whisper.
 
 To access from another machine on your LAN:
 
-1. Find your Windows IP: `ipconfig`
-2. Open firewall port: `netsh advfirewall firewall add rule name="Qwen3-TTS" dir=in action=allow protocol=TCP localport=8880`
+1. Find your IP: `ip addr show` (or `hostname -I`)
+2. Open firewall port if needed: `sudo ufw allow 8880/tcp`
 3. Use `http://<YOUR_IP>:8880` from other devices
 
 ## Configuration
